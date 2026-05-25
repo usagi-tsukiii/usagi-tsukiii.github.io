@@ -230,9 +230,7 @@
         </div>
       </div>
     </div>
-
     <div class="content">
-
       <!-- COMMANDS PANEL -->
       <div class="panel active" id="panel-commands">
         <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:24px">
@@ -253,7 +251,6 @@
           <div class="cmd-list" id="cmd-list"></div>
         </div>
       </div>
-
       <!-- CHAT PANEL -->
       <div class="panel" id="panel-chat">
         <div class="section-title">Chat Monitor</div>
@@ -266,8 +263,7 @@
           <div id="chat-log"><div class="chat-msg"><span class="chat-system">Waiting for chat connection…</span></div></div>
         </div>
       </div>
-
-      <!-- MEDIA PANEL -->
+     <!-- MEDIA PANEL -->
       <div class="panel" id="panel-media">
         <div class="section-title">Media Library</div>
         <div class="section-sub">Uploaded sounds and overlay media — used by your commands</div>
@@ -284,7 +280,6 @@
           </div>
         </div>
       </div>
-
       <!-- SETTINGS PANEL -->
       <div class="panel" id="panel-settings">
         <div class="section-title">Settings</div>
@@ -316,7 +311,6 @@
           <button class="btn btn-danger" id="btn-clear-all">Clear All Data</button>
         </div>
       </div>
-
     </div>
   </div>
 </div>
@@ -372,7 +366,7 @@
 // Register your app at https://dev.twitch.tv/console
 // Set the OAuth Redirect URL to: https://usagitsukiii.neocities.org/bot
 const CLIENT_ID = 'tybrj9y1ts5eas6cyrl1j0diw2v7ln';
-const REDIRECT_URI = 'https://usagi-tsukiii.github.io/usako.html';
+const REDIRECT_URI = 'https://usagi-tsukiii.github.io/index.html';
 
 // All requested Twitch scopes
 const SCOPES = [
