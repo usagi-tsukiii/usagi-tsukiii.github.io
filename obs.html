@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Usako – OBS Overlay</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: transparent;
+    width: 100vw;
+    height: 100vh;
+    overflow: hidden;
+    position: relative;
+  }
+  .overlay-el {
+    position: absolute;
+    border-radius: 8px;
+    max-width: 80vw;
+    max-height: 80vh;
+    pointer-events: none;
+  }
+  .pos-center      { top: 50%; left: 50%; transform: translate(-50%, -50%); }
+  .pos-top-left    { top: 20px; left: 20px; }
+  .pos-top-right   { top: 20px; right: 20px; }
+  .pos-bottom-left { bottom: 20px; left: 20px; }
+  .pos-bottom-right{ bottom: 20px; right: 20px; }
+  .pos-top-center  { top: 20px; left: 50%; transform: translateX(-50%); }
+  .pos-bottom-center{ bottom: 20px; left: 50%; transform: translateX(-50%); }
+</style>
+</head>
+<body>
+<div id="container"></div>
+<script>
+  const STORE_KEY = 'usako_v1';
+
+  function getMedia() {
+    try {
+      const s = localStorage.getItem(STORE_KEY);
+      if (!s) return { sounds: [], overlays: [] };
+      return JSON.parse(s).mediaLib || { sounds: [], overlays: [] };
+    } catch(e) { return { sounds: [], overlays: [] }; }
+  }
+
+  function playSound(action) {
+    const media = getMedia();
+    const file = media.sounds.find(s => s.id === action.fileId);
+    if (!file) { console.warn('OBS: sound not found', action.fileId); return; }
+    const audio = new Audio(file.b64);
+    audio.volume = action.volume !== undefined ? Math.min(1, Math.max(0, action.volume)) : 1;
+    audio.play().catch(e => console.warn('OBS: audio play failed', e));
+  }
+
+  function showOverlay(action) {
+    const media = getMedia();
+    const file = media.overlays.find(o => o.id === action.fileId);
+    if (!file) { console.warn('OBS: overlay not found', action.fileId); return; }
+    const container = document.getElementById('container');
+    const el = file.mime.startsWith('video')
+      ? document.createElement('video')
+      : document.createElement('img');
+    el.src = file.b64;
+    el.className = 'overlay-el pos-' + (action.position || 'center');
+    if (action.width) el.style.width = action.width + 'px';
+    if (el.tagName === 'VIDEO') {
+      el.autoplay = true;
+      el.muted = false;
+      el.loop = action.duration === 0;
+    }
+    container.appendChild(el);
+    const dur = action.duration || 3000;
+    if (dur > 0) setTimeout(() => el.remove(), dur);
+  }
+
+  // Listen for messages from the main Usako bot page
+  const channel = new BroadcastChannel('usako_obs');
+  channel.onmessage = (e) => {
+    const action = e.data;
+    console.log('OBS received action:', action);
+    if (!action || !action.type) return;
+    const delay = action.delay || 0;
+    if (action.type === 'sound') setTimeout(() => playSound(action), delay);
+    if (action.type === 'overlay') setTimeout(() => showOverlay(action), delay);
+  };
+
+  console.log('Usako OBS overlay ready — listening for actions...');
+</script>
+</body>
+</html>
