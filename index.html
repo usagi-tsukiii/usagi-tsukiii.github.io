@@ -939,14 +939,16 @@ document.getElementById('btn-clear-chat').addEventListener('click', () => { docu
 function escHtml(s) { return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 
 // ─── BOOT ─────────────────────────────────────────────────────────────────────
-loadState();
-if (handleOAuthCallback()) {
-  // showApp called after user fetch completes
-} else if (state.streamer) {
-  showApp();
-} else {
-  showLogin();
-}
+document.addEventListener('DOMContentLoaded', () => {
+  loadState();
+  if (handleOAuthCallback()) {
+    // showApp called after username entry
+  } else if (state.streamer) {
+    showApp();
+  } else {
+    showLogin();
+  }
+});
 </script>
 
 <!-- USERNAME ENTRY MODAL -->
