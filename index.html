@@ -446,33 +446,33 @@ function handleOAuthCallback() {
   if (!hash.includes('access_token')) return false;
   const params = new URLSearchParams(hash.substring(1));
   const token = params.get('access_token');
-  const role = localStorage.getItem('usako_pending_role');
+  const role = localStorage.getItem('usako_pending_role') || 'streamer';
   history.replaceState(null, '', location.pathname);
-  if (!token) { alert('Login failed: no access token returned.'); showLogin(); return true; }
-  const effectiveRole = role || 'streamer';
+  if (!token) { showLogin(); return true; }
   localStorage.removeItem('usako_pending_role');
-  // Show in-page modal to enter username (browser blocks prompt() after redirects)
-  const modal = document.getElementById('username-modal');
-  const titleEl = document.getElementById('username-modal-title');
-  const input = document.getElementById('username-modal-input');
-  const saveBtn = document.getElementById('username-modal-save');
-  titleEl.textContent = (effectiveRole === 'streamer' ? 'Streamer' : 'Bot') + ' Account Connected!';
-  input.value = '';
-  modal.style.display = 'flex';
-  input.focus();
-  const finish = () => {
-    const name = input.value.trim();
-    if (!name) { input.focus(); return; }
-    modal.style.display = 'none';
-    const account = { name: name.toLowerCase(), display: name, token };
-    if (effectiveRole === 'streamer') state.streamer = account;
-    else state.bot = account;
-    saveState();
-    showApp();
-  };
-  saveBtn.onclick = finish;
-  input.onkeydown = (e) => { if (e.key === 'Enter') finish(); };
-  return true;
+  // Store token temporarily, ask for username via settings page
+  localStorage.setItem('usako_pending_token', token);
+  localStorage.setItem('usako_pending_token_role', role);
+  return false; // fall through to showLogin, where we'll detect pending token
+}
+
+function checkPendingToken() {
+  const token = localStorage.getItem('usako_pending_token');
+  const role = localStorage.getItem('usako_pending_token_role') || 'streamer';
+  if (!token) return;
+  const name = window.prompt('Twitch auth successful! Enter your Twitch username for this ' + role + ' account:');
+  if (!name || !name.trim()) {
+    localStorage.removeItem('usako_pending_token');
+    localStorage.removeItem('usako_pending_token_role');
+    return;
+  }
+  localStorage.removeItem('usako_pending_token');
+  localStorage.removeItem('usako_pending_token_role');
+  const account = { name: name.trim().toLowerCase(), display: name.trim(), token };
+  if (role === 'streamer') state.streamer = account;
+  else state.bot = account;
+  saveState();
+  showApp();
 }
 
 function enterDemoMode() {
@@ -961,9 +961,9 @@ function escHtml(s) { return String(s || '').replace(/&/g,'&amp;').replace(/</g,
 // ─── BOOT ─────────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
   loadState();
-  if (handleOAuthCallback()) {
-    // showApp called after username entry
-  } else if (state.streamer) {
+  handleOAuthCallback();
+  checkPendingToken();
+  if (state.streamer) {
     showApp();
   } else {
     showLogin();
