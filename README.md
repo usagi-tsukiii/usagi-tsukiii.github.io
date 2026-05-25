@@ -230,7 +230,9 @@
         </div>
       </div>
     </div>
+
     <div class="content">
+
       <!-- COMMANDS PANEL -->
       <div class="panel active" id="panel-commands">
         <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:24px">
@@ -251,6 +253,7 @@
           <div class="cmd-list" id="cmd-list"></div>
         </div>
       </div>
+
       <!-- CHAT PANEL -->
       <div class="panel" id="panel-chat">
         <div class="section-title">Chat Monitor</div>
@@ -263,6 +266,7 @@
           <div id="chat-log"><div class="chat-msg"><span class="chat-system">Waiting for chat connection…</span></div></div>
         </div>
       </div>
+
       <!-- MEDIA PANEL -->
       <div class="panel" id="panel-media">
         <div class="section-title">Media Library</div>
@@ -280,6 +284,7 @@
           </div>
         </div>
       </div>
+
       <!-- SETTINGS PANEL -->
       <div class="panel" id="panel-settings">
         <div class="section-title">Settings</div>
@@ -365,9 +370,9 @@
 // ─── CONFIG ───────────────────────────────────────────────────────────────────
 // IMPORTANT: Replace with your own Twitch App Client ID.
 // Register your app at https://dev.twitch.tv/console
-// Set the OAuth Redirect URL to: 
+// Set the OAuth Redirect URL to: https://usagitsukiii.neocities.org/bot
 const CLIENT_ID = 'tybrj9y1ts5eas6cyrl1j0diw2v7ln';
-const REDIRECT_URI = 'https://usagi-tsukiii.github.io/index.html';
+const REDIRECT_URI = 'https://usagi-tsukiii.github.io/usako.html';
 
 // All requested Twitch scopes
 const SCOPES = [
@@ -418,8 +423,6 @@ function doOAuth(role) {
 
 function handleOAuthCallback() {
   const hash = location.hash;
-  console.log('handleOAuthCallback — hash:', hash);
-  console.log('handleOAuthCallback — pending role:', localStorage.getItem('usako_pending_role'));
   if (!hash.includes('access_token')) return false;
   const params = new URLSearchParams(hash.substring(1));
   const token = params.get('access_token');
@@ -428,16 +431,27 @@ function handleOAuthCallback() {
   if (!token) { alert('Login failed: no access token returned.'); showLogin(); return true; }
   const effectiveRole = role || 'streamer';
   localStorage.removeItem('usako_pending_role');
-  const defaultName = effectiveRole === 'streamer' ? 'your_channel' : 'your_bot';
-  const name = prompt((effectiveRole === 'streamer' ? 'Streamer' : 'Bot') + ' account connected! Enter the Twitch username for this account:', defaultName);
-  console.log('Username entered:', name);
-  if (!name || !name.trim()) { showLogin(); return true; }
-  const account = { name: name.trim().toLowerCase(), display: name.trim(), token };
-  if (effectiveRole === 'streamer') state.streamer = account;
-  else state.bot = account;
-  saveState();
-  console.log('State saved, calling showApp. state.streamer:', JSON.stringify(state.streamer));
-  showApp();
+  // Show in-page modal to enter username (browser blocks prompt() after redirects)
+  const modal = document.getElementById('username-modal');
+  const titleEl = document.getElementById('username-modal-title');
+  const input = document.getElementById('username-modal-input');
+  const saveBtn = document.getElementById('username-modal-save');
+  titleEl.textContent = (effectiveRole === 'streamer' ? 'Streamer' : 'Bot') + ' Account Connected!';
+  input.value = '';
+  modal.style.display = 'flex';
+  input.focus();
+  const finish = () => {
+    const name = input.value.trim();
+    if (!name) { input.focus(); return; }
+    modal.style.display = 'none';
+    const account = { name: name.toLowerCase(), display: name, token };
+    if (effectiveRole === 'streamer') state.streamer = account;
+    else state.bot = account;
+    saveState();
+    showApp();
+  };
+  saveBtn.onclick = finish;
+  input.onkeydown = (e) => { if (e.key === 'Enter') finish(); };
   return true;
 }
 
@@ -934,5 +948,24 @@ if (handleOAuthCallback()) {
   showLogin();
 }
 </script>
+
+<!-- USERNAME ENTRY MODAL -->
+<div class="modal-bg" id="username-modal" style="display:none">
+  <div class="modal" style="max-width:400px">
+    <div class="modal-header">
+      <div class="modal-title" id="username-modal-title">Account Connected!</div>
+    </div>
+    <div class="modal-body">
+      <p style="color:var(--muted);font-size:13px;margin-bottom:16px">Twitch authorization was successful. Enter the username for this account:</p>
+      <div class="field">
+        <label>Twitch Username</label>
+        <input type="text" id="username-modal-input" placeholder="e.g. usagi_tsukiii" autocomplete="off">
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-primary" id="username-modal-save">Continue</button>
+    </div>
+  </div>
+</div>
 </body>
 </html>
