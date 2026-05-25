@@ -370,9 +370,9 @@
 // ─── CONFIG ───────────────────────────────────────────────────────────────────
 // IMPORTANT: Replace with your own Twitch App Client ID.
 // Register your app at https://dev.twitch.tv/console
-// Set the OAuth Redirect URL to: https://usagitsukiii.neocities.org/bot
+// Set the OAuth Redirect URL to: 
 const CLIENT_ID = 'tybrj9y1ts5eas6cyrl1j0diw2v7ln';
-const REDIRECT_URI = 'https://usagi-tsukiii.github.io/usako.html';
+const REDIRECT_URI = 'https://usagi-tsukiii.github.io';
 
 // All requested Twitch scopes
 const SCOPES = [
