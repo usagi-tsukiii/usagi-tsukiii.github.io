@@ -372,7 +372,7 @@
 // Register your app at https://dev.twitch.tv/console
 // Set the OAuth Redirect URL to: 
 const CLIENT_ID = 'tybrj9y1ts5eas6cyrl1j0diw2v7ln';
-const REDIRECT_URI = 'https://usagi-tsukiii.github.io';
+const REDIRECT_URI = 'https://usagi-tsukiii.github.io/index.html';
 
 // All requested Twitch scopes
 const SCOPES = [
