@@ -366,6 +366,26 @@
   </div>
 </div>
 
+
+<!-- USERNAME ENTRY MODAL -->
+<div class="modal-bg" id="username-modal" style="display:none">
+  <div class="modal" style="max-width:400px">
+    <div class="modal-header">
+      <div class="modal-title" id="username-modal-title">Account Connected!</div>
+    </div>
+    <div class="modal-body">
+      <p style="color:var(--muted);font-size:13px;margin-bottom:16px">Twitch authorization was successful. Enter the username for this account:</p>
+      <div class="field">
+        <label>Twitch Username</label>
+        <input type="text" id="username-modal-input" placeholder="e.g. usagi_tsukiii" autocomplete="off">
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-primary" id="username-modal-save">Continue</button>
+    </div>
+  </div>
+</div>
+
 <script>
 // ─── CONFIG ───────────────────────────────────────────────────────────────────
 // IMPORTANT: Replace with your own Twitch App Client ID.
@@ -950,24 +970,5 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 });
 </script>
-
-<!-- USERNAME ENTRY MODAL -->
-<div class="modal-bg" id="username-modal" style="display:none">
-  <div class="modal" style="max-width:400px">
-    <div class="modal-header">
-      <div class="modal-title" id="username-modal-title">Account Connected!</div>
-    </div>
-    <div class="modal-body">
-      <p style="color:var(--muted);font-size:13px;margin-bottom:16px">Twitch authorization was successful. Enter the username for this account:</p>
-      <div class="field">
-        <label>Twitch Username</label>
-        <input type="text" id="username-modal-input" placeholder="e.g. usagi_tsukiii" autocomplete="off">
-      </div>
-    </div>
-    <div class="modal-footer">
-      <button class="btn btn-primary" id="username-modal-save">Continue</button>
-    </div>
-  </div>
-</div>
 </body>
 </html>
