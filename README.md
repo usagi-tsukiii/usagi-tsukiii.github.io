@@ -423,23 +423,25 @@ function doOAuth(role) {
 
 function handleOAuthCallback() {
   const hash = location.hash;
+  console.log('handleOAuthCallback — hash:', hash);
+  console.log('handleOAuthCallback — pending role:', localStorage.getItem('usako_pending_role'));
   if (!hash.includes('access_token')) return false;
   const params = new URLSearchParams(hash.substring(1));
   const token = params.get('access_token');
   const role = localStorage.getItem('usako_pending_role');
   history.replaceState(null, '', location.pathname);
-  if (!token) { alert('Login failed: no access token returned. Please try again.'); showLogin(); return true; }
+  if (!token) { alert('Login failed: no access token returned.'); showLogin(); return true; }
   const effectiveRole = role || 'streamer';
   localStorage.removeItem('usako_pending_role');
-  // No fetch needed — prompt for channel name and store the token directly.
-  // The token is valid (Twitch only redirects with one if auth succeeded).
   const defaultName = effectiveRole === 'streamer' ? 'your_channel' : 'your_bot';
   const name = prompt((effectiveRole === 'streamer' ? 'Streamer' : 'Bot') + ' account connected! Enter the Twitch username for this account:', defaultName);
+  console.log('Username entered:', name);
   if (!name || !name.trim()) { showLogin(); return true; }
   const account = { name: name.trim().toLowerCase(), display: name.trim(), token };
   if (effectiveRole === 'streamer') state.streamer = account;
   else state.bot = account;
   saveState();
+  console.log('State saved, calling showApp. state.streamer:', JSON.stringify(state.streamer));
   showApp();
   return true;
 }
