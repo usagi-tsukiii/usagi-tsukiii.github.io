@@ -372,7 +372,7 @@
 // Register your app at https://dev.twitch.tv/console
 // Set the OAuth Redirect URL to: https://usagitsukiii.neocities.org/bot
 const CLIENT_ID = 'tybrj9y1ts5eas6cyrl1j0diw2v7ln';
-const REDIRECT_URI = 'https://usagitsukiii.neocities.org/usako.html';
+const REDIRECT_URI = 'https://usagi-tsukiii.github.io/usako.html';
 
 // All requested Twitch scopes
 const SCOPES = [
@@ -783,8 +783,8 @@ function connectIRC() {
     ircSocket.send(`JOIN #${channel}`);
   };
   ircSocket.onmessage = e => handleIRCMessage(e.data);
-  ircSocket.onerror = () => { addChatMsg('system', '', 'WebSocket error.'); setConnState(false); };
-  ircSocket.onclose = () => {
+  ircSocket.onerror = (e) => { console.error('IRC WebSocket error', e); addChatMsg('system', '', 'WebSocket error — if on GitHub Pages, try enabling insecure content or check F12 console.'); setConnState(false); };
+  ircSocket.onclose = (e) => { console.log('IRC closed, code:', e.code, 'reason:', e.reason); 
     setConnState(false);
     addChatMsg('system', '', 'Disconnected. Retrying in 10s…');
     reconnectTimeout = setTimeout(connectIRC, 10000);
