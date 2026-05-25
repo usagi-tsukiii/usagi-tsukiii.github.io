@@ -1,4 +1,3 @@
-<!-- Usako -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -313,6 +312,15 @@
           </div>
         </div>
         <div class="card">
+          <div class="card-title" style="margin-bottom:16px">OBS Browser Source</div>
+          <p style="font-size:13px;color:var(--muted);margin-bottom:12px">Add this URL as a Browser Source in OBS. Set width/height to match your stream resolution. Background is transparent.</p>
+          <div style="display:flex;gap:10px;align-items:center">
+            <input type="text" value="https://usagi-tsukiii.github.io/obs.html" readonly id="obs-url-input" style="flex:1;font-family:var(--mono);font-size:12px">
+            <button class="btn btn-primary btn-sm" id="btn-copy-obs-url">Copy</button>
+          </div>
+          <div style="font-size:11px;color:var(--muted);margin-top:8px">⚠️ Keep this bot page open in the same browser while streaming — the OBS source listens for signals from it.</div>
+        </div>
+        <div class="card">
           <div class="card-title" style="margin-bottom:16px">Danger Zone</div>
           <button class="btn btn-danger" id="btn-clear-all">Clear All Data</button>
         </div>
@@ -413,6 +421,10 @@ const SCOPES = [
   'moderator:read:followers',
   'user:read:email'
 ].join(' ');
+
+// ─── OBS BROADCAST ───────────────────────────────────────────────────────────
+const obsChannel = new BroadcastChannel('usako_obs');
+function sendToOBS(action) { obsChannel.postMessage(action); }
 
 // ─── STATE ───────────────────────────────────────────────────────────────────
 const STORE_KEY = 'usako_v1';
@@ -911,6 +923,8 @@ function sendChatMessage(msg) {
 }
 
 function playSound(action) {
+  sendToOBS(action);
+  // Also play locally in case OBS source is not open
   const file = state.mediaLib.sounds.find(s => s.id === action.fileId);
   if (!file) return;
   const audio = new Audio(file.b64);
@@ -919,27 +933,7 @@ function playSound(action) {
 }
 
 function showOverlay(action) {
-  const file = state.mediaLib.overlays.find(o => o.id === action.fileId);
-  if (!file) return;
-  const container = document.getElementById('overlay-container');
-  const el = file.mime.startsWith('video') ? document.createElement('video') : document.createElement('img');
-  el.src = file.b64;
-  if (el.tagName === 'VIDEO') { el.autoplay = true; el.muted = false; el.loop = action.duration === 0; }
-  const pos = action.position || 'center';
-  if (action.width) el.style.width = `${action.width}px`;
-  if (pos === 'center') Object.assign(el.style, { top: '50%', left: '50%', transform: 'translate(-50%,-50%)' });
-  else if (pos === 'top-left') Object.assign(el.style, { top: '20px', left: '20px' });
-  else if (pos === 'top-right') Object.assign(el.style, { top: '20px', right: '20px' });
-  else if (pos === 'bottom-left') Object.assign(el.style, { bottom: '20px', left: '20px' });
-  else if (pos === 'bottom-right') Object.assign(el.style, { bottom: '20px', right: '20px' });
-  else if (pos === 'top-center') Object.assign(el.style, { top: '20px', left: '50%', transform: 'translateX(-50%)' });
-  else if (pos === 'bottom-center') Object.assign(el.style, { bottom: '20px', left: '50%', transform: 'translateX(-50%)' });
-  el.style.borderRadius = '8px';
-  el.style.maxWidth = '80vw';
-  el.style.maxHeight = '80vh';
-  container.appendChild(el);
-  const dur = action.duration || 3000;
-  if (dur > 0) setTimeout(() => el.remove(), dur);
+  sendToOBS(action);
 }
 
 // ─── CHAT LOG ─────────────────────────────────────────────────────────────────
@@ -960,6 +954,16 @@ document.getElementById('btn-clear-chat').addEventListener('click', () => { docu
 function escHtml(s) { return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 
 // ─── BOOT ─────────────────────────────────────────────────────────────────────
+document.addEventListener('click', e => {
+  if (e.target.id === 'btn-copy-obs-url') {
+    const input = document.getElementById('obs-url-input');
+    navigator.clipboard.writeText(input.value).then(() => {
+      e.target.textContent = 'Copied!';
+      setTimeout(() => e.target.textContent = 'Copy', 2000);
+    });
+  }
+});
+
 document.addEventListener('DOMContentLoaded', () => {
   loadState();
   handleOAuthCallback();
