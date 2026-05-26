@@ -164,7 +164,13 @@
     console.log('OBS: audio context unlocked');
   }
 
-  // Try immediately and also on any interaction
+  // Unlock audio via OBS scene activation hook
+  if (window.obsstudio) {
+    window.obsstudio.onActiveChange = function(active) {
+      if (active) { try { unlockAudio(); } catch(e) {} }
+    };
+  }
+  // Also try immediately and on any click
   try { unlockAudio(); } catch(e) {}
   document.addEventListener('click', unlockAudio, { once: true });
 
