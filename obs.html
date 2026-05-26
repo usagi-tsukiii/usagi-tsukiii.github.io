@@ -150,6 +150,24 @@
     };
   }
 
+  // Unlock audio context for OBS (OBS triggers an interaction on scene activation)
+  // Pre-create and resume AudioContext so audio plays without gesture
+  function unlockAudio() {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    ctx.resume();
+    // Play a silent buffer to fully unlock
+    const buf = ctx.createBuffer(1, 1, 22050);
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    src.connect(ctx.destination);
+    src.start(0);
+    console.log('OBS: audio context unlocked');
+  }
+
+  // Try immediately and also on any interaction
+  try { unlockAudio(); } catch(e) {}
+  document.addEventListener('click', unlockAudio, { once: true });
+
   connect();
 </script>
 </body>
