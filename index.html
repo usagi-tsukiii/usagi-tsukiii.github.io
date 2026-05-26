@@ -927,12 +927,7 @@ function sendChatMessage(msg) {
 
 function playSound(action) {
   sendToOBS(action);
-  // Also play locally in case OBS source is not open
-  const file = state.mediaLib.sounds.find(s => s.id === action.fileId);
-  if (!file) return;
-  const audio = new Audio(file.b64);
-  audio.volume = action.volume !== undefined ? Math.min(1, Math.max(0, action.volume)) : 1;
-  audio.play().catch(e => console.warn('Audio play failed:', e));
+  // Sound plays on OBS browser source only
 }
 
 function showOverlay(action) {
