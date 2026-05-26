@@ -422,9 +422,12 @@ const SCOPES = [
   'user:read:email'
 ].join(' ');
 
-// ─── OBS BROADCAST ───────────────────────────────────────────────────────────
-const obsChannel = new BroadcastChannel('usako_obs');
-function sendToOBS(action) { obsChannel.postMessage(action); }
+// ─── OBS BRIDGE ──────────────────────────────────────────────────────────────
+function sendToOBS(action) {
+  // Write action to localStorage so OBS browser source can pick it up
+  const payload = { action, t: Date.now() };
+  localStorage.setItem('usako_obs_trigger', JSON.stringify(payload));
+}
 
 // ─── STATE ───────────────────────────────────────────────────────────────────
 const STORE_KEY = 'usako_v1';
@@ -934,6 +937,28 @@ function playSound(action) {
 
 function showOverlay(action) {
   sendToOBS(action);
+  // Also show on website
+  const file = state.mediaLib.overlays.find(o => o.id === action.fileId);
+  if (!file) return;
+  const container = document.getElementById('overlay-container');
+  const el = file.mime.startsWith('video') ? document.createElement('video') : document.createElement('img');
+  el.src = file.b64;
+  if (el.tagName === 'VIDEO') { el.autoplay = true; el.muted = false; el.loop = action.duration === 0; }
+  const pos = action.position || 'center';
+  if (action.width) el.style.width = action.width + 'px';
+  if (pos === 'center') Object.assign(el.style, { top: '50%', left: '50%', transform: 'translate(-50%,-50%)' });
+  else if (pos === 'top-left') Object.assign(el.style, { top: '20px', left: '20px' });
+  else if (pos === 'top-right') Object.assign(el.style, { top: '20px', right: '20px' });
+  else if (pos === 'bottom-left') Object.assign(el.style, { bottom: '20px', left: '20px' });
+  else if (pos === 'bottom-right') Object.assign(el.style, { bottom: '20px', right: '20px' });
+  else if (pos === 'top-center') Object.assign(el.style, { top: '20px', left: '50%', transform: 'translateX(-50%)' });
+  else if (pos === 'bottom-center') Object.assign(el.style, { bottom: '20px', left: '50%', transform: 'translateX(-50%)' });
+  el.style.borderRadius = '8px';
+  el.style.maxWidth = '80vw';
+  el.style.maxHeight = '80vh';
+  container.appendChild(el);
+  const dur = action.duration || 3000;
+  if (dur > 0) setTimeout(() => el.remove(), dur);
 }
 
 // ─── CHAT LOG ─────────────────────────────────────────────────────────────────
