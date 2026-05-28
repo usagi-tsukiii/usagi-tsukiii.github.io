@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Usako OBS Source - Tokenless Safe</title>
+<title>Usako OBS Source</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body {
@@ -27,11 +27,36 @@
     z-index: 9999;
     font-family: monospace;
     font-size: 12px;
-    color: rgba(255,255,255,.75);
-    background: rgba(0,0,0,.4);
-    padding: 6px 8px;
-    border-radius: 6px;
+    color: rgba(255,255,255,.82);
+    background: rgba(0,0,0,.48);
+    padding: 7px 9px;
+    border-radius: 7px;
     pointer-events: none;
+    max-width: 96vw;
+    white-space: pre-wrap;
+  }
+  #help {
+    display: none;
+    position: fixed;
+    left: 16px;
+    top: 16px;
+    z-index: 9999;
+    font-family: Arial, sans-serif;
+    font-size: 14px;
+    line-height: 1.45;
+    color: #fff;
+    background: rgba(0,0,0,.78);
+    padding: 16px;
+    border-radius: 10px;
+    max-width: 760px;
+  }
+  #help code {
+    display: block;
+    margin-top: 8px;
+    padding: 8px;
+    border-radius: 6px;
+    background: rgba(255,255,255,.12);
+    word-break: break-all;
   }
   #audio-unlock {
     display: none;
@@ -50,6 +75,7 @@
 <body>
 <div id="container"></div>
 <div id="status">Usako OBS — loading...</div>
+<div id="help"></div>
 <div id="audio-unlock">Click once to enable audio preview<br><small>OBS/Streamlabs usually do not need this.</small></div>
 
 <script>
@@ -63,6 +89,24 @@ let lastTriggerTime = 0;
 function setStatus(msg) {
   document.getElementById('status').textContent = 'Usako OBS — ' + msg;
   console.log('[Usako OBS]', msg);
+}
+
+function showHelp() {
+  const current = new URL(location.href);
+  current.search = '?channel=YOUR_TWITCH_CHANNEL';
+  current.hash = '';
+
+  const help = document.getElementById('help');
+  help.style.display = 'block';
+  help.innerHTML = `
+    <strong>Usako OBS needs your Twitch channel in the URL.</strong><br>
+    In Streamlabs/OBS Browser Source, use this format:
+    <code>${current.toString()}</code>
+    Replace <strong>YOUR_TWITCH_CHANNEL</strong> with your channel name, lowercase.<br><br>
+    Example:
+    <code>${current.toString().replace('YOUR_TWITCH_CHANNEL', 'usagi_tsukiii')}</code>
+    This source does <strong>not</strong> need a Twitch token to read public chat.
+  `;
 }
 
 function safeJsonParse(value, fallback = null) {
@@ -97,10 +141,18 @@ function normalizeConfig(raw) {
 async function loadConfig() {
   const params = new URLSearchParams(location.search);
 
-  // SAFE Streamlabs mode:
-  // obs.html?channel=name
-  // obs.html?channel=name&config=https://your-site.com/usako-config.json
-  // obs.html?cfg=smallEncodedConfig
+  // Streamlabs safe mode:
+  // obs.html?channel=yourchannel
+  if (params.get('channel')) {
+    return normalizeConfig({
+      channel: params.get('channel').toLowerCase().replace(/^@/, ''),
+      commands: [],
+      mediaLib: { sounds: [], overlays: [] }
+    });
+  }
+
+  // Hosted config mode:
+  // obs.html?config=https://your-site.com/usako-config.json
   if (params.get('config')) {
     const url = params.get('config');
     setStatus('loading hosted config...');
@@ -109,20 +161,12 @@ async function loadConfig() {
     return normalizeConfig(await res.json());
   }
 
+  // Small encoded config mode:
   if (params.get('cfg')) {
     return normalizeConfig(safeJsonParse(base64UrlDecode(params.get('cfg'))));
   }
 
-  const channel = params.get('channel');
-  if (channel) {
-    return normalizeConfig({
-      channel: channel.toLowerCase(),
-      commands: [],
-      mediaLib: { sounds: [], overlays: [] }
-    });
-  }
-
-  // Normal browser/OBS testing mode: read localStorage from same browser.
+  // Normal browser/OBS testing mode, same browser as dashboard.
   const appState = safeJsonParse(localStorage.getItem(STORE_KEY));
   if (appState) return normalizeConfig(appState);
 
@@ -133,9 +177,7 @@ async function loadConfig() {
 }
 
 function refreshConfigFromPayload(payload) {
-  if (payload && payload.state) {
-    config = normalizeConfig(payload.state);
-  }
+  if (payload && payload.state) config = normalizeConfig(payload.state);
 }
 
 function getMediaSource(file) {
@@ -299,7 +341,11 @@ function checkTrigger(text) {
 }
 
 function startIRC() {
-  if (!config || !config.channel) return setStatus('missing channel/config');
+  if (!config || !config.channel) {
+    setStatus('missing channel/config');
+    showHelp();
+    return;
+  }
 
   if (socket) {
     try { socket.close(); } catch (e) {}
@@ -364,8 +410,11 @@ if (window.obsstudio) {
   try {
     config = await loadConfig();
 
-    if (!config) return setStatus('no config found');
-    if (!config.channel) return setStatus('config missing channel');
+    if (!config || !config.channel) {
+      setStatus('missing channel/config');
+      showHelp();
+      return;
+    }
 
     setStatus('loaded #' + config.channel + ' / ' + ((config.commands || []).length) + ' command(s)');
     startIRC();
