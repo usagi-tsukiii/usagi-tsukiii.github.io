@@ -257,6 +257,18 @@
   }
 
   document.getElementById('btn-save').addEventListener('click', saveConfig);
+ window.addEventListener('storage', e => {
+  if (e.key !== 'usako_obs_trigger' || !e.newValue) return;
+
+  const payload = JSON.parse(e.newValue);
+  const action = payload.action;
+  const config = loadConfig();
+
+  if (!config) return;
+
+  if (action.type === 'sound') playSound(action, config.mediaLib);
+  if (action.type === 'overlay') showOverlay(action, config.mediaLib);
+});
 </script>
 </body>
 </html>
