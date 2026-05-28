@@ -424,9 +424,25 @@ const SCOPES = [
 
 // ─── OBS BRIDGE ──────────────────────────────────────────────────────────────
 function sendToOBS(action) {
-  // Write action to localStorage so OBS browser source can pick it up
-  const payload = { action, t: Date.now() };
+  const payload = {
+    action,
+    state: {
+      channel: state.streamer ? state.streamer.name : '',
+      commands: state.commands || [],
+      mediaLib: state.mediaLib || { sounds: [], overlays: [] }
+    },
+    t: Date.now()
+  };
+
   localStorage.setItem('usako_obs_trigger', JSON.stringify(payload));
+
+  try {
+    const bc = new BroadcastChannel('usako_obs');
+    bc.postMessage(payload);
+    bc.close();
+  } catch (e) {}
+
+  console.log('Sent to OBS:', payload);
 }
 
 // ─── STATE ───────────────────────────────────────────────────────────────────
@@ -489,10 +505,10 @@ async function handleOAuthCallback() {
     saveState();
     showApp();
   } catch (err) {
-    console.error('Could not fetch Twitch user automatically:', err);
+    console.error('Automatic Twitch username fetch failed:', err);
 
     const fallbackName = window.prompt(
-      'Twitch login worked, but Usako could not automatically read the username. Enter the Twitch username for this ' + role + ' account:'
+      'Twitch login worked, but Usako could not automatically read the username. Enter this Twitch username:'
     );
 
     if (!fallbackName || !fallbackName.trim()) {
@@ -524,21 +540,16 @@ async function fetchTwitchUser(token) {
     }
   });
 
-  if (!res.ok) {
-    throw new Error('Twitch user lookup failed: ' + res.status);
-  }
+  if (!res.ok) throw new Error('Twitch user lookup failed: ' + res.status);
 
   const data = await res.json();
-
-  if (!data.data || !data.data[0]) {
-    throw new Error('No Twitch user returned.');
-  }
+  if (!data.data || !data.data[0]) throw new Error('No Twitch user returned.');
 
   return data.data[0];
 }
 
 function checkPendingToken() {
-  // Kept for older saved sessions. New logins are handled automatically by handleOAuthCallback().
+  // Older saved login flow compatibility only.
   return;
 }
 
@@ -1003,23 +1014,25 @@ document.getElementById('btn-clear-chat').addEventListener('click', () => { docu
 function escHtml(s) { return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 
 function base64UrlEncode(str) {
-  const utf8 = new TextEncoder().encode(str);
+  const bytes = new TextEncoder().encode(str);
   let binary = '';
-  utf8.forEach(byte => binary += String.fromCharCode(byte));
+  bytes.forEach(b => binary += String.fromCharCode(b));
   return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
 }
 
 function getOBSBaseUrl() {
   const url = new URL(location.href);
-  const path = url.pathname.replace(/index\.html?$/i, '').replace(/\/$/, '');
-  url.pathname = path + '/obs.html';
   url.hash = '';
   url.search = '';
+  url.pathname = url.pathname.replace(/index\.html?$/i, 'obs.html');
+  if (!/obs\.html$/i.test(url.pathname)) {
+    url.pathname = url.pathname.replace(/\/$/, '') + '/obs.html';
+  }
   return url;
 }
 
 function buildStreamlabsOBSUrl() {
-  if (!state.streamer || !state.streamer.name) return '';
+  if (!state.streamer || !state.streamer.name) return getOBSBaseUrl().toString();
 
   const sourceConfig = {
     channel: state.streamer.name,
@@ -1027,9 +1040,10 @@ function buildStreamlabsOBSUrl() {
     mediaLib: state.mediaLib || { sounds: [], overlays: [] }
   };
 
-  const obsUrl = getOBSBaseUrl();
-  obsUrl.searchParams.set('cfg', base64UrlEncode(JSON.stringify(sourceConfig)));
-  return obsUrl.toString();
+  const encoded = base64UrlEncode(JSON.stringify(sourceConfig));
+  const url = getOBSBaseUrl();
+  url.searchParams.set('cfg', encoded);
+  return url.toString();
 }
 
 function updateOBSUrl() {
@@ -1037,7 +1051,12 @@ function updateOBSUrl() {
   if (!input) return;
 
   const url = buildStreamlabsOBSUrl();
-  if (url) input.value = url;
+  input.value = url;
+
+  if (url.length > 180000) {
+    input.value = getOBSBaseUrl().toString();
+    console.warn('Streamlabs URL would be very large because media is stored as base64. Use hosted media URLs for Streamlabs, or use the plain obs.html URL for normal OBS/browser testing.');
+  }
 }
 
 // ─── BOOT ─────────────────────────────────────────────────────────────────────
