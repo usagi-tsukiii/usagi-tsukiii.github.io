@@ -446,6 +446,7 @@ function loadState() {
 }
 function saveState() {
   try { localStorage.setItem(STORE_KEY, JSON.stringify(state)); } catch(e) { console.warn('Storage full?', e); }
+  updateOBSUrl();
 }
 
 // ─── OAUTH ───────────────────────────────────────────────────────────────────
@@ -457,38 +458,88 @@ function doOAuth(role) {
   window.location.href = url;
 }
 
-function handleOAuthCallback() {
+async function handleOAuthCallback() {
   const hash = location.hash;
   if (!hash.includes('access_token')) return false;
+
   const params = new URLSearchParams(hash.substring(1));
   const token = params.get('access_token');
   const role = localStorage.getItem('usako_pending_role') || 'streamer';
+
   history.replaceState(null, '', location.pathname);
-  if (!token) { showLogin(); return true; }
   localStorage.removeItem('usako_pending_role');
-  // Store token temporarily, ask for username via settings page
-  localStorage.setItem('usako_pending_token', token);
-  localStorage.setItem('usako_pending_token_role', role);
-  return false; // fall through to showLogin, where we'll detect pending token
+
+  if (!token) {
+    showLogin();
+    return true;
+  }
+
+  try {
+    const user = await fetchTwitchUser(token);
+    const account = {
+      id: user.id,
+      name: user.login.toLowerCase(),
+      display: user.display_name || user.login,
+      token
+    };
+
+    if (role === 'streamer') state.streamer = account;
+    else state.bot = account;
+
+    saveState();
+    showApp();
+  } catch (err) {
+    console.error('Could not fetch Twitch user automatically:', err);
+
+    const fallbackName = window.prompt(
+      'Twitch login worked, but Usako could not automatically read the username. Enter the Twitch username for this ' + role + ' account:'
+    );
+
+    if (!fallbackName || !fallbackName.trim()) {
+      showLogin();
+      return true;
+    }
+
+    const account = {
+      name: fallbackName.trim().toLowerCase(),
+      display: fallbackName.trim(),
+      token
+    };
+
+    if (role === 'streamer') state.streamer = account;
+    else state.bot = account;
+
+    saveState();
+    showApp();
+  }
+
+  return true;
+}
+
+async function fetchTwitchUser(token) {
+  const res = await fetch('https://api.twitch.tv/helix/users', {
+    headers: {
+      'Client-ID': CLIENT_ID,
+      'Authorization': 'Bearer ' + token
+    }
+  });
+
+  if (!res.ok) {
+    throw new Error('Twitch user lookup failed: ' + res.status);
+  }
+
+  const data = await res.json();
+
+  if (!data.data || !data.data[0]) {
+    throw new Error('No Twitch user returned.');
+  }
+
+  return data.data[0];
 }
 
 function checkPendingToken() {
-  const token = localStorage.getItem('usako_pending_token');
-  const role = localStorage.getItem('usako_pending_token_role') || 'streamer';
-  if (!token) return;
-  const name = window.prompt('Twitch auth successful! Enter your Twitch username for this ' + role + ' account:');
-  if (!name || !name.trim()) {
-    localStorage.removeItem('usako_pending_token');
-    localStorage.removeItem('usako_pending_token_role');
-    return;
-  }
-  localStorage.removeItem('usako_pending_token');
-  localStorage.removeItem('usako_pending_token_role');
-  const account = { name: name.trim().toLowerCase(), display: name.trim(), token };
-  if (role === 'streamer') state.streamer = account;
-  else state.bot = account;
-  saveState();
-  showApp();
+  // Kept for older saved sessions. New logins are handled automatically by handleOAuthCallback().
+  return;
 }
 
 function enterDemoMode() {
@@ -510,6 +561,7 @@ function showApp() {
   updateAccountChips();
   renderCommands();
   renderMediaLib();
+  updateOBSUrl();
 }
 
 function updateAccountChips() {
@@ -950,6 +1002,44 @@ document.getElementById('btn-clear-chat').addEventListener('click', () => { docu
 // ─── UTILS ────────────────────────────────────────────────────────────────────
 function escHtml(s) { return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 
+function base64UrlEncode(str) {
+  const utf8 = new TextEncoder().encode(str);
+  let binary = '';
+  utf8.forEach(byte => binary += String.fromCharCode(byte));
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+}
+
+function getOBSBaseUrl() {
+  const url = new URL(location.href);
+  const path = url.pathname.replace(/index\.html?$/i, '').replace(/\/$/, '');
+  url.pathname = path + '/obs.html';
+  url.hash = '';
+  url.search = '';
+  return url;
+}
+
+function buildStreamlabsOBSUrl() {
+  if (!state.streamer || !state.streamer.name) return '';
+
+  const sourceConfig = {
+    channel: state.streamer.name,
+    commands: state.commands || [],
+    mediaLib: state.mediaLib || { sounds: [], overlays: [] }
+  };
+
+  const obsUrl = getOBSBaseUrl();
+  obsUrl.searchParams.set('cfg', base64UrlEncode(JSON.stringify(sourceConfig)));
+  return obsUrl.toString();
+}
+
+function updateOBSUrl() {
+  const input = document.getElementById('obs-url-input');
+  if (!input) return;
+
+  const url = buildStreamlabsOBSUrl();
+  if (url) input.value = url;
+}
+
 // ─── BOOT ─────────────────────────────────────────────────────────────────────
 document.addEventListener('click', e => {
   if (e.target.id === 'btn-copy-obs-url') {
@@ -961,14 +1051,18 @@ document.addEventListener('click', e => {
   }
 });
 
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
   loadState();
-  handleOAuthCallback();
+
+  const handledOAuth = await handleOAuthCallback();
   checkPendingToken();
-  if (state.streamer) {
-    showApp();
-  } else {
-    showLogin();
+
+  if (!handledOAuth) {
+    if (state.streamer) {
+      showApp();
+    } else {
+      showLogin();
+    }
   }
 });
 </script>
