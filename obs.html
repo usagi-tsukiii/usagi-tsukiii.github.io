@@ -18,16 +18,32 @@
     max-width: 80vw;
     max-height: 80vh;
     pointer-events: none;
+    z-index: 10;
   }
   #status {
     position: fixed;
     bottom: 10px;
     left: 10px;
     font-family: monospace;
-    font-size: 11px;
-    color: rgba(255,255,255,0.35);
+    font-size: 12px;
+    color: rgba(255,255,255,0.65);
+    background: rgba(0,0,0,0.35);
+    padding: 6px 8px;
+    border-radius: 6px;
     pointer-events: none;
-    text-shadow: 0 1px 2px rgba(0,0,0,0.8);
+    z-index: 9999;
+  }
+  #audio-unlock {
+    display: none;
+    position: fixed;
+    inset: 0;
+    z-index: 9998;
+    background: rgba(0,0,0,0.75);
+    color: white;
+    font-family: sans-serif;
+    place-items: center;
+    text-align: center;
+    cursor: pointer;
   }
 </style>
 </head>
@@ -35,10 +51,21 @@
 
 <div id="container"></div>
 <div id="status">Usako OBS — loading...</div>
+<div id="audio-unlock">Click once to enable audio preview<br><small>OBS/Streamlabs usually do not need this.</small></div>
 
 <script>
-  let socket = null;
+  const STORE_KEY = 'usako_v1';
+  const OBS_KEY = 'usako_obs_config';
+
   let config = null;
+  let socket = null;
+  let lastTriggerTime = 0;
+
+  function setStatus(msg) {
+    const el = document.getElementById('status');
+    el.textContent = 'Usako OBS — ' + msg;
+    console.log('[Usako OBS]', msg);
+  }
 
   function base64UrlDecode(str) {
     const padded = str.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((str.length + 3) % 4);
@@ -47,34 +74,83 @@
     return new TextDecoder().decode(bytes);
   }
 
-  function loadConfigFromUrl() {
-    const params = new URLSearchParams(location.search);
+  function normalizeConfig(raw) {
+    if (!raw) return null;
 
-    if (params.get('cfg')) {
-      return JSON.parse(base64UrlDecode(params.get('cfg')));
+    if (raw.streamer) {
+      return {
+        channel: raw.streamer.name,
+        commands: raw.commands || [],
+        mediaLib: raw.mediaLib || { sounds: [], overlays: [] }
+      };
     }
 
-    // Backup simple mode:
-    // obs.html?channel=yourchannel
     return {
-      channel: (params.get('channel') || '').toLowerCase(),
-      commands: [],
-      mediaLib: { sounds: [], overlays: [] }
+      channel: raw.channel || '',
+      commands: raw.commands || [],
+      mediaLib: raw.mediaLib || { sounds: [], overlays: [] }
     };
   }
 
-  function setStatus(msg) {
-    document.getElementById('status').textContent = 'Usako OBS — ' + msg;
+  function loadConfig() {
+    const params = new URLSearchParams(location.search);
+
+    try {
+      if (params.get('cfg')) {
+        return normalizeConfig(JSON.parse(base64UrlDecode(params.get('cfg'))));
+      }
+    } catch (e) {
+      setStatus('URL config error: ' + e.message);
+    }
+
+    try {
+      const s = localStorage.getItem(STORE_KEY);
+      if (s) return normalizeConfig(JSON.parse(s));
+    } catch (e) {}
+
+    try {
+      const s = localStorage.getItem(OBS_KEY);
+      if (s) return normalizeConfig(JSON.parse(s));
+    } catch (e) {}
+
+    const channel = params.get('channel');
+    if (channel) {
+      return normalizeConfig({
+        channel,
+        commands: [],
+        mediaLib: { sounds: [], overlays: [] }
+      });
+    }
+
+    return null;
+  }
+
+  function refreshConfigFromPayload(payload) {
+    if (payload && payload.state) {
+      config = normalizeConfig(payload.state);
+      return;
+    }
+
+    const fresh = loadConfig();
+    if (fresh) config = fresh;
+  }
+
+  function getMediaSource(file) {
+    return file.url || file.b64 || file.src || '';
   }
 
   function playSound(action) {
-    const file = (config.mediaLib.sounds || []).find(s => s.id === action.fileId);
+    refreshConfigFromPayload();
+
+    const sounds = (config && config.mediaLib && config.mediaLib.sounds) || [];
+    const file = sounds.find(s => String(s.id) === String(action.fileId));
+
     if (!file) {
       setStatus('sound not found: ' + action.fileId);
       return;
     }
 
-    const src = file.url || file.b64;
+    const src = getMediaSource(file);
     if (!src) {
       setStatus('sound has no url/b64');
       return;
@@ -86,22 +162,33 @@
         ? Math.min(1, Math.max(0, parseFloat(action.volume)))
         : 1;
 
-      audio.play()
-        .then(() => setStatus('♪ playing sound'))
-        .catch(e => setStatus('sound error: ' + e.message));
+      const p = audio.play();
+
+      if (p && p.catch) {
+        p.then(() => setStatus('♪ playing sound: ' + (file.name || file.id)))
+         .catch(e => {
+           setStatus('sound blocked: click to enable audio');
+           showAudioUnlock();
+           console.error(e);
+         });
+      }
     } catch (e) {
       setStatus('sound error: ' + e.message);
     }
   }
 
   function showOverlay(action) {
-    const file = (config.mediaLib.overlays || []).find(o => o.id === action.fileId);
+    refreshConfigFromPayload();
+
+    const overlays = (config && config.mediaLib && config.mediaLib.overlays) || [];
+    const file = overlays.find(o => String(o.id) === String(action.fileId));
+
     if (!file) {
       setStatus('overlay not found: ' + action.fileId);
       return;
     }
 
-    const src = file.url || file.b64;
+    const src = getMediaSource(file);
     if (!src) {
       setStatus('overlay has no url/b64');
       return;
@@ -128,20 +215,64 @@
     else if (pos === 'top-center')    Object.assign(el.style, { top:'20px', left:'50%', transform:'translateX(-50%)' });
     else if (pos === 'bottom-center') Object.assign(el.style, { bottom:'20px', left:'50%', transform:'translateX(-50%)' });
 
+    el.onerror = () => setStatus('overlay failed to load');
+    el.onload = () => setStatus('🖼 showing overlay: ' + (file.name || file.id));
+
     if (el.tagName === 'VIDEO') {
       el.autoplay = true;
       el.muted = false;
       el.loop = action.duration === 0;
       el.playsInline = true;
-      el.play().catch(() => {});
+      el.onloadeddata = () => setStatus('🎬 showing video: ' + (file.name || file.id));
+      el.play().catch(e => {
+        setStatus('video play blocked: click to enable');
+        showAudioUnlock();
+        console.error(e);
+      });
     }
 
     container.appendChild(el);
-    setStatus('🖼 showing overlay');
 
     const dur = action.duration !== undefined ? Number(action.duration) : 3000;
     if (dur > 0) setTimeout(() => el.remove(), dur);
   }
+
+  function runAction(action) {
+    if (!action || !action.type) return;
+    if (action.type === 'sound') playSound(action);
+    if (action.type === 'overlay') showOverlay(action);
+  }
+
+  function receivePayload(payload) {
+    if (!payload || !payload.action) return;
+    if (payload.t && payload.t <= lastTriggerTime) return;
+
+    lastTriggerTime = payload.t || Date.now();
+    refreshConfigFromPayload(payload);
+    runAction(payload.action);
+  }
+
+  window.addEventListener('storage', e => {
+    if (e.key !== 'usako_obs_trigger' || !e.newValue) return;
+
+    try {
+      receivePayload(JSON.parse(e.newValue));
+    } catch (err) {
+      setStatus('trigger parse error: ' + err.message);
+    }
+  });
+
+  try {
+    const bc = new BroadcastChannel('usako_obs');
+    bc.onmessage = e => receivePayload(e.data);
+  } catch (e) {}
+
+  setInterval(() => {
+    try {
+      const s = localStorage.getItem('usako_obs_trigger');
+      if (s) receivePayload(JSON.parse(s));
+    } catch (e) {}
+  }, 750);
 
   function buildTriggers(cmd) {
     const raw = (cmd.triggers || '').trim().split(/\s+/).filter(Boolean);
@@ -151,6 +282,8 @@
   }
 
   function checkTrigger(text) {
+    if (!config) return;
+
     const msgLower = text.trim().toLowerCase();
 
     (config.commands || []).forEach(cmd => {
@@ -165,15 +298,11 @@
 
         if (!matched) continue;
 
-        setStatus('▶ ' + cmd.name);
+        setStatus('▶ command: ' + cmd.name);
 
         (cmd.actions || []).forEach(action => {
           if (action.type !== 'sound' && action.type !== 'overlay') return;
-
-          setTimeout(() => {
-            if (action.type === 'sound') playSound(action);
-            if (action.type === 'overlay') showOverlay(action);
-          }, action.delay || 0);
+          setTimeout(() => runAction(action), action.delay || 0);
         });
 
         break;
@@ -181,7 +310,7 @@
     });
   }
 
-  function startBot() {
+  function startIRC() {
     if (!config || !config.channel) {
       setStatus('missing channel/config');
       return;
@@ -219,12 +348,12 @@
         }
 
         const parts = rest.split(' ');
-        if (parts[0].startsWith(':')) parts.shift();
+        if (parts[0] && parts[0].startsWith(':')) parts.shift();
 
         const cmd = parts.shift();
         const params = parts.join(' ');
 
-        if (cmd === '001' || cmd === '376') {
+        if (cmd === '001' || cmd === '376' || cmd === 'JOIN') {
           setStatus('✓ connected to #' + config.channel);
         }
 
@@ -237,10 +366,15 @@
 
     socket.onclose = () => {
       setStatus('disconnected — reconnecting in 10s...');
-      setTimeout(startBot, 10000);
+      setTimeout(startIRC, 10000);
     };
 
     socket.onerror = () => setStatus('websocket error');
+  }
+
+  function showAudioUnlock() {
+    const el = document.getElementById('audio-unlock');
+    el.style.display = 'grid';
   }
 
   function unlockAudio() {
@@ -255,7 +389,12 @@
       src.connect(ctx.destination);
       src.start(0);
     } catch (e) {}
+
+    document.getElementById('audio-unlock').style.display = 'none';
   }
+
+  document.getElementById('audio-unlock').addEventListener('click', unlockAudio);
+  document.addEventListener('click', unlockAudio, { once: true });
 
   if (window.obsstudio) {
     window.obsstudio.onActiveChange = active => {
@@ -263,15 +402,18 @@
     };
   }
 
-  unlockAudio();
-  document.addEventListener('click', unlockAudio, { once: true });
-
   try {
-    config = loadConfigFromUrl();
-    startBot();
+    config = loadConfig();
+
+    if (config) {
+      setStatus('loaded config for #' + config.channel);
+      startIRC();
+    } else {
+      setStatus('no config found');
+    }
   } catch (e) {
+    setStatus('startup error: ' + e.message);
     console.error(e);
-    setStatus('config error: ' + e.message);
   }
 </script>
 </body>
