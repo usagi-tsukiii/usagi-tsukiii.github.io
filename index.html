@@ -317,6 +317,7 @@
           <div style="display:flex;gap:10px;align-items:center">
             <input type="text" value="https://usagi-tsukiii.github.io/obs.html" readonly id="obs-url-input" style="flex:1;font-family:var(--mono);font-size:12px">
             <button class="btn btn-primary btn-sm" id="btn-copy-obs-url">Copy</button>
+            <button class="btn btn-ghost btn-sm" id="btn-export-streamlabs-config">Export Config</button>
           </div>
           <div style="font-size:11px;color:var(--muted);margin-top:8px">⚠️ Keep this bot page open in the same browser while streaming — the OBS source listens for signals from it.</div>
         </div>
@@ -1032,17 +1033,15 @@ function getOBSBaseUrl() {
 }
 
 function buildStreamlabsOBSUrl() {
-  if (!state.streamer || !state.streamer.name) return getOBSBaseUrl().toString();
-
-  const sourceConfig = {
-    channel: state.streamer.name,
-    commands: state.commands || [],
-    mediaLib: state.mediaLib || { sounds: [], overlays: [] }
-  };
-
-  const encoded = base64UrlEncode(JSON.stringify(sourceConfig));
   const url = getOBSBaseUrl();
-  url.searchParams.set('cfg', encoded);
+
+  // IMPORTANT:
+  // Do NOT put Twitch tokens in the Streamlabs Browser Source URL.
+  // Streamlabs can read public Twitch chat anonymously, so this URL only needs the channel.
+  if (state.streamer && state.streamer.name) {
+    url.searchParams.set('channel', state.streamer.name);
+  }
+
   return url.toString();
 }
 
@@ -1050,14 +1049,31 @@ function updateOBSUrl() {
   const input = document.getElementById('obs-url-input');
   if (!input) return;
 
-  const url = buildStreamlabsOBSUrl();
-  input.value = url;
-
-  if (url.length > 180000) {
-    input.value = getOBSBaseUrl().toString();
-    console.warn('Streamlabs URL would be very large because media is stored as base64. Use hosted media URLs for Streamlabs, or use the plain obs.html URL for normal OBS/browser testing.');
-  }
+  input.value = buildStreamlabsOBSUrl();
 }
+
+function downloadStreamlabsConfig() {
+  const safeConfig = {
+    channel: state.streamer ? state.streamer.name : '',
+    commands: state.commands || [],
+    mediaLib: state.mediaLib || { sounds: [], overlays: [] }
+  };
+
+  const blob = new Blob([JSON.stringify(safeConfig, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'usako-streamlabs-config.json';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+
+  URL.revokeObjectURL(url);
+}
+
+const exportBtn = document.getElementById('btn-export-streamlabs-config');
+if (exportBtn) exportBtn.addEventListener('click', downloadStreamlabsConfig);
 
 // ─── BOOT ─────────────────────────────────────────────────────────────────────
 document.addEventListener('click', e => {
