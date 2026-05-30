@@ -158,11 +158,21 @@
   .alert-info { background: rgba(108,92,231,0.1); border: 1px solid rgba(108,92,231,0.3); color: var(--accent2); }
   .alert-warning { background: rgba(253,203,110,0.1); border: 1px solid rgba(253,203,110,0.3); color: var(--yellow); }
   ::-webkit-scrollbar { width: 6px; } ::-webkit-scrollbar-track { background: transparent; } ::-webkit-scrollbar-thumb { background: var(--surface3); border-radius: 3px; }
+
+  /* OBS MODE */
+  body.obs-mode { background: transparent !important; }
+  body.obs-mode #login-screen, body.obs-mode #app { display: none !important; }
+  #obs-container { display: none; position: fixed; inset: 0; pointer-events: none; z-index: 9999; background: transparent; }
+  body.obs-mode #obs-container { display: block; }
+  .obs-overlay-el { position: absolute; border-radius: 8px; max-width: 80vw; max-height: 80vh; pointer-events: none; }
+  #obs-status { position: fixed; bottom: 8px; left: 8px; font-family: monospace; font-size: 11px; color: rgba(255,255,255,0.2); pointer-events: none; }
 </style>
 </head>
 <body>
 
 <div id="overlay-container"></div>
+<div id="obs-container"></div>
+<div id="obs-status"></div>
 
 <!-- LOGIN SCREEN -->
 <div id="login-screen">
@@ -313,13 +323,14 @@
         </div>
         <div class="card">
           <div class="card-title" style="margin-bottom:16px">OBS Browser Source</div>
-          <p style="font-size:13px;color:var(--muted);margin-bottom:12px">Click Generate to create your personal OBS browser source URL. Paste it into Streamlabs/OBS as a Browser Source (1920x1080). It will auto-connect to your chat and play sounds and overlays.</p>
+          <p style="font-size:13px;color:var(--muted);margin-bottom:12px">Generate your permanent OBS URL once and paste it into Streamlabs/OBS. When you add new commands or media, just click <strong style="color:var(--text)">Sync to OBS</strong> — no need to update the URL.</p>
           <div style="display:flex;gap:10px;align-items:center;margin-bottom:10px">
-            <input type="text" id="obs-url-input" readonly placeholder="Click Generate to create your URL" style="flex:1;font-family:var(--mono);font-size:11px">
+            <input type="text" id="obs-url-input" readonly placeholder="Click Generate to create your permanent URL" style="flex:1;font-family:var(--mono);font-size:11px">
             <button class="btn btn-primary btn-sm" id="btn-gen-obs-url">Generate</button>
             <button class="btn btn-ghost btn-sm" id="btn-copy-obs-url">Copy</button>
           </div>
-          <div style="font-size:11px;color:var(--muted)">⚠️ Regenerate this URL any time you add new commands or media — the URL encodes your current setup.</div>
+          <button class="btn btn-green btn-sm" id="btn-sync-obs" style="width:100%;justify-content:center;margin-top:4px">Sync to OBS</button>
+          <div style="font-size:11px;color:var(--muted);margin-top:8px">Generate once → paste URL into OBS → click Sync any time you change commands or media.</div>
         </div>
         <div class="card">
           <div class="card-title" style="margin-bottom:16px">Danger Zone</div>
@@ -952,6 +963,18 @@ document.getElementById('btn-clear-chat').addEventListener('click', () => { docu
 function escHtml(s) { return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 
 // ─── BOOT ─────────────────────────────────────────────────────────────────────
+function syncToOBS() {
+  // Save commands + media into a dedicated localStorage key the OBS page reads
+  const data = { commands: state.commands, mediaLib: state.mediaLib, updated: Date.now() };
+  try {
+    localStorage.setItem('usako_obs_data', JSON.stringify(data));
+    const btn = document.getElementById('btn-sync-obs');
+    if (btn) { btn.textContent = '✓ Synced!'; btn.style.background = 'var(--green)'; setTimeout(() => { btn.textContent = 'Sync to OBS'; btn.style.background = ''; }, 2000); }
+  } catch(e) {
+    alert('Sync failed — your media may be too large for localStorage. Try smaller files.');
+  }
+}
+
 document.addEventListener('click', e => {
   if (e.target.id === 'btn-copy-obs-url') {
     const input = document.getElementById('obs-url-input');
@@ -965,26 +988,177 @@ document.addEventListener('click', e => {
     if (!state.streamer) { alert('You must be logged in to generate an OBS URL.'); return; }
     const token = (state.bot || state.streamer).token;
     const channel = state.streamer.name;
-    if (!token) { alert('No OAuth token found. Please log in with a real account (not demo mode).'); return; }
-    // Compress commands + media into base64 to embed in URL
-    const payload = {
-      channel,
-      token,
-      commands: state.commands,
-      mediaLib: state.mediaLib
-    };
-    const json = JSON.stringify(payload);
-    const b64 = btoa(unescape(encodeURIComponent(json)));
-    const url = 'https://usagi-tsukiii.github.io/obs.html#' + b64;
+    if (!token) { alert('No OAuth token found. Please log in with a real Twitch account (not demo mode).'); return; }
+    // Only token + channel in URL — media/commands sync separately via localStorage
+    const url = 'https://usagi-tsukiii.github.io/?obs=1&channel=' + encodeURIComponent(channel) + '&token=' + encodeURIComponent(token);
     document.getElementById('obs-url-input').value = url;
-    // Warn if URL is very long
-    if (url.length > 50000) {
-      alert('Warning: your URL is very long (' + Math.round(url.length/1024) + 'KB) due to uploaded media. Consider using smaller image/audio files for better compatibility with browser sources.');
-    }
+    // Auto-sync data immediately
+    syncToOBS();
+  }
+  if (e.target.id === 'btn-sync-obs') {
+    syncToOBS();
   }
 });
 
+// ── OBS MODE ──────────────────────────────────────────────────────────────
+function obsSetStatus(msg) {
+  const el = document.getElementById('obs-status');
+  if (el) el.textContent = 'Usako OBS — ' + msg;
+}
+
+function obsPlaySound(action, mediaLib) {
+  const file = (mediaLib.sounds || []).find(s => s.id === action.fileId);
+  if (!file) { obsSetStatus('sound not found'); return; }
+  const audio = new Audio(file.b64);
+  audio.volume = action.volume !== undefined ? Math.min(1, Math.max(0, parseFloat(action.volume))) : 1;
+  audio.play().then(() => obsSetStatus('playing sound')).catch(e => obsSetStatus('sound error: ' + e.message));
+}
+
+function obsShowOverlay(action, mediaLib) {
+  const file = (mediaLib.overlays || []).find(o => o.id === action.fileId);
+  if (!file) { obsSetStatus('overlay not found'); return; }
+  const container = document.getElementById('obs-container');
+  const el = file.mime.startsWith('video') ? document.createElement('video') : document.createElement('img');
+  el.src = file.b64;
+  el.className = 'obs-overlay-el';
+  if (action.width) el.style.width = action.width + 'px';
+  const pos = action.position || 'center';
+  if      (pos === 'center')        Object.assign(el.style, { top:'50%', left:'50%', transform:'translate(-50%,-50%)' });
+  else if (pos === 'top-left')      Object.assign(el.style, { top:'20px', left:'20px' });
+  else if (pos === 'top-right')     Object.assign(el.style, { top:'20px', right:'20px' });
+  else if (pos === 'bottom-left')   Object.assign(el.style, { bottom:'20px', left:'20px' });
+  else if (pos === 'bottom-right')  Object.assign(el.style, { bottom:'20px', right:'20px' });
+  else if (pos === 'top-center')    Object.assign(el.style, { top:'20px', left:'50%', transform:'translateX(-50%)' });
+  else if (pos === 'bottom-center') Object.assign(el.style, { bottom:'20px', left:'50%', transform:'translateX(-50%)' });
+  if (el.tagName === 'VIDEO') { el.autoplay = true; el.muted = false; el.loop = action.duration === 0; }
+  container.appendChild(el);
+  obsSetStatus('showing overlay');
+  const dur = action.duration !== undefined ? action.duration : 3000;
+  if (dur > 0) setTimeout(() => el.remove(), dur);
+}
+
+function obsBuildTriggers(cmd) {
+  const raw = (cmd.triggers || '').trim().split(/\s+/).filter(Boolean);
+  if (!raw.length) raw.push(cmd.name);
+  return (cmd.autoExclaim !== false ? raw.map(t => '!' + t) : raw).map(t => t.toLowerCase());
+}
+
+function obsCheckTrigger(text, obsConfig) {
+  // Always use latest synced config
+  const cfg = window._obsConfig || obsConfig;
+  const lower = text.trim().toLowerCase();
+  (cfg.commands || []).forEach(cmd => {
+    if (cmd.enabled === false) return;
+    for (const trigger of obsBuildTriggers(cmd)) {
+      const matched = cmd.wildcards ? lower.startsWith(trigger) : lower.split(/\s+/)[0] === trigger;
+      if (matched) {
+        obsSetStatus('running: ' + cmd.name);
+        (cmd.actions || []).forEach(action => {
+          if (action.type !== 'sound' && action.type !== 'overlay') return;
+          setTimeout(() => {
+            const latest = window._obsConfig || obsConfig;
+            if (action.type === 'sound') obsPlaySound(action, latest.mediaLib);
+            if (action.type === 'overlay') obsShowOverlay(action, latest.mediaLib);
+          }, action.delay || 0);
+        });
+        break;
+      }
+    }
+  });
+}
+
+function obsUnlockAudio() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    ctx.resume();
+    const buf = ctx.createBuffer(1, 1, 22050);
+    const src = ctx.createBufferSource();
+    src.buffer = buf; src.connect(ctx.destination); src.start(0);
+  } catch(e) {}
+}
+
+function startOBSMode(obsConfig) {
+  document.body.classList.add('obs-mode');
+  obsUnlockAudio();
+  if (window.obsstudio) window.obsstudio.onActiveChange = a => { if (a) obsUnlockAudio(); };
+
+  let obsSocket = null;
+  function obsConnect() {
+    obsSetStatus('connecting to #' + obsConfig.channel + '...');
+    if (obsSocket) { try { obsSocket.close(); } catch(e) {} }
+    obsSocket = new WebSocket('wss://irc-ws.chat.twitch.tv:443');
+    obsSocket.onopen = () => {
+      if (obsConfig.token) {
+        obsSocket.send('PASS oauth:' + obsConfig.token);
+        obsSocket.send('NICK ' + obsConfig.channel);
+      } else {
+        obsSocket.send('PASS SCHMOOPIIE');
+        obsSocket.send('NICK justinfan' + Math.floor(Math.random() * 99999));
+      }
+      obsSocket.send('CAP REQ :twitch.tv/tags twitch.tv/commands');
+      obsSocket.send('JOIN #' + obsConfig.channel);
+    };
+    obsSocket.onmessage = e => {
+      e.data.split('\r\n').filter(Boolean).forEach(line => {
+        if (line.startsWith('PING')) { obsSocket.send('PONG :tmi.twitch.tv'); return; }
+        let rest = line;
+        if (line.startsWith('@')) { const sp = line.indexOf(' '); rest = line.substring(sp + 1); }
+        const parts = rest.split(' ');
+        if (parts[0].startsWith(':')) parts.shift();
+        const cmd = parts.shift();
+        const params = parts.join(' ');
+        if (cmd === '001' || cmd === '376') obsSetStatus('connected to #' + obsConfig.channel);
+        if (cmd === 'PRIVMSG') {
+          const m = params.match(/^#\S+ :(.*)/);
+          if (m) obsCheckTrigger(m[1], obsConfig);
+        }
+      });
+    };
+    obsSocket.onclose = () => { obsSetStatus('reconnecting...'); setTimeout(obsConnect, 10000); };
+    obsSocket.onerror = () => obsSetStatus('connection error');
+  }
+  obsConnect();
+}
+
 document.addEventListener('DOMContentLoaded', () => {
+  // Check if this is OBS mode
+  const params = new URLSearchParams(location.search);
+  if (params.get('obs') === '1') {
+    const channel = params.get('channel');
+    const token = params.get('token');
+    if (channel) {
+      // Load commands + media from localStorage (synced from bot page)
+      let commands = [], mediaLib = { sounds: [], overlays: [] };
+      try {
+        const stored = localStorage.getItem('usako_obs_data');
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          commands = parsed.commands || [];
+          mediaLib = parsed.mediaLib || { sounds: [], overlays: [] };
+        }
+      } catch(e) {}
+      // Also poll for updates every 5 seconds (picks up Sync clicks)
+      setInterval(() => {
+        try {
+          const stored = localStorage.getItem('usako_obs_data');
+          if (stored) {
+            const parsed = JSON.parse(stored);
+            if (parsed.updated > (window._obsLastSync || 0)) {
+              window._obsLastSync = parsed.updated;
+              window._obsConfig.commands = parsed.commands || [];
+              window._obsConfig.mediaLib = parsed.mediaLib || { sounds: [], overlays: [] };
+              obsSetStatus('synced latest commands');
+            }
+          }
+        } catch(e) {}
+      }, 5000);
+      const obsConfig = { channel, token, commands, mediaLib };
+      window._obsConfig = obsConfig;
+      startOBSMode(obsConfig);
+      return;
+    }
+  }
+  // Normal bot mode
   loadState();
   handleOAuthCallback();
   checkPendingToken();
