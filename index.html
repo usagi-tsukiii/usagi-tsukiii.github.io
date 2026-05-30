@@ -317,7 +317,6 @@
           <div style="display:flex;gap:10px;align-items:center">
             <input type="text" value="https://usagi-tsukiii.github.io/obs.html" readonly id="obs-url-input" style="flex:1;font-family:var(--mono);font-size:12px">
             <button class="btn btn-primary btn-sm" id="btn-copy-obs-url">Copy</button>
-            <button class="btn btn-ghost btn-sm" id="btn-export-streamlabs-config">Export Config</button>
           </div>
           <div style="font-size:11px;color:var(--muted);margin-top:8px">⚠️ Keep this bot page open in the same browser while streaming — the OBS source listens for signals from it.</div>
         </div>
@@ -425,25 +424,9 @@ const SCOPES = [
 
 // ─── OBS BRIDGE ──────────────────────────────────────────────────────────────
 function sendToOBS(action) {
-  const payload = {
-    action,
-    state: {
-      channel: state.streamer ? state.streamer.name : '',
-      commands: state.commands || [],
-      mediaLib: state.mediaLib || { sounds: [], overlays: [] }
-    },
-    t: Date.now()
-  };
-
+  // Write action to localStorage so OBS browser source can pick it up
+  const payload = { action, t: Date.now() };
   localStorage.setItem('usako_obs_trigger', JSON.stringify(payload));
-
-  try {
-    const bc = new BroadcastChannel('usako_obs');
-    bc.postMessage(payload);
-    bc.close();
-  } catch (e) {}
-
-  console.log('Sent to OBS:', payload);
 }
 
 // ─── STATE ───────────────────────────────────────────────────────────────────
@@ -463,7 +446,6 @@ function loadState() {
 }
 function saveState() {
   try { localStorage.setItem(STORE_KEY, JSON.stringify(state)); } catch(e) { console.warn('Storage full?', e); }
-  updateOBSUrl();
 }
 
 // ─── OAUTH ───────────────────────────────────────────────────────────────────
@@ -475,83 +457,38 @@ function doOAuth(role) {
   window.location.href = url;
 }
 
-async function handleOAuthCallback() {
+function handleOAuthCallback() {
   const hash = location.hash;
   if (!hash.includes('access_token')) return false;
-
   const params = new URLSearchParams(hash.substring(1));
   const token = params.get('access_token');
   const role = localStorage.getItem('usako_pending_role') || 'streamer';
-
   history.replaceState(null, '', location.pathname);
+  if (!token) { showLogin(); return true; }
   localStorage.removeItem('usako_pending_role');
-
-  if (!token) {
-    showLogin();
-    return true;
-  }
-
-  try {
-    const user = await fetchTwitchUser(token);
-    const account = {
-      id: user.id,
-      name: user.login.toLowerCase(),
-      display: user.display_name || user.login,
-      token
-    };
-
-    if (role === 'streamer') state.streamer = account;
-    else state.bot = account;
-
-    saveState();
-    showApp();
-  } catch (err) {
-    console.error('Automatic Twitch username fetch failed:', err);
-
-    const fallbackName = window.prompt(
-      'Twitch login worked, but Usako could not automatically read the username. Enter this Twitch username:'
-    );
-
-    if (!fallbackName || !fallbackName.trim()) {
-      showLogin();
-      return true;
-    }
-
-    const account = {
-      name: fallbackName.trim().toLowerCase(),
-      display: fallbackName.trim(),
-      token
-    };
-
-    if (role === 'streamer') state.streamer = account;
-    else state.bot = account;
-
-    saveState();
-    showApp();
-  }
-
-  return true;
-}
-
-async function fetchTwitchUser(token) {
-  const res = await fetch('https://api.twitch.tv/helix/users', {
-    headers: {
-      'Client-ID': CLIENT_ID,
-      'Authorization': 'Bearer ' + token
-    }
-  });
-
-  if (!res.ok) throw new Error('Twitch user lookup failed: ' + res.status);
-
-  const data = await res.json();
-  if (!data.data || !data.data[0]) throw new Error('No Twitch user returned.');
-
-  return data.data[0];
+  // Store token temporarily, ask for username via settings page
+  localStorage.setItem('usako_pending_token', token);
+  localStorage.setItem('usako_pending_token_role', role);
+  return false; // fall through to showLogin, where we'll detect pending token
 }
 
 function checkPendingToken() {
-  // Older saved login flow compatibility only.
-  return;
+  const token = localStorage.getItem('usako_pending_token');
+  const role = localStorage.getItem('usako_pending_token_role') || 'streamer';
+  if (!token) return;
+  const name = window.prompt('Twitch auth successful! Enter your Twitch username for this ' + role + ' account:');
+  if (!name || !name.trim()) {
+    localStorage.removeItem('usako_pending_token');
+    localStorage.removeItem('usako_pending_token_role');
+    return;
+  }
+  localStorage.removeItem('usako_pending_token');
+  localStorage.removeItem('usako_pending_token_role');
+  const account = { name: name.trim().toLowerCase(), display: name.trim(), token };
+  if (role === 'streamer') state.streamer = account;
+  else state.bot = account;
+  saveState();
+  showApp();
 }
 
 function enterDemoMode() {
@@ -573,7 +510,6 @@ function showApp() {
   updateAccountChips();
   renderCommands();
   renderMediaLib();
-  updateOBSUrl();
 }
 
 function updateAccountChips() {
@@ -990,11 +926,11 @@ function sendChatMessage(msg) {
 }
 
 function playSound(action) {
-  sendToOBS(action);
+  // Handled by obs.html browser source
 }
 
 function showOverlay(action) {
-  sendToOBS(action);
+  // Handled by obs.html browser source
 }
 
 // ─── CHAT LOG ─────────────────────────────────────────────────────────────────
@@ -1014,67 +950,6 @@ document.getElementById('btn-clear-chat').addEventListener('click', () => { docu
 // ─── UTILS ────────────────────────────────────────────────────────────────────
 function escHtml(s) { return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 
-function base64UrlEncode(str) {
-  const bytes = new TextEncoder().encode(str);
-  let binary = '';
-  bytes.forEach(b => binary += String.fromCharCode(b));
-  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
-}
-
-function getOBSBaseUrl() {
-  const url = new URL(location.href);
-  url.hash = '';
-  url.search = '';
-  url.pathname = url.pathname.replace(/index\.html?$/i, 'obs.html');
-  if (!/obs\.html$/i.test(url.pathname)) {
-    url.pathname = url.pathname.replace(/\/$/, '') + '/obs.html';
-  }
-  return url;
-}
-
-function buildStreamlabsOBSUrl() {
-  const url = getOBSBaseUrl();
-
-  // IMPORTANT:
-  // Do NOT put Twitch tokens in the Streamlabs Browser Source URL.
-  // Streamlabs can read public Twitch chat anonymously, so this URL only needs the channel.
-  if (state.streamer && state.streamer.name) {
-    url.searchParams.set('channel', state.streamer.name);
-  }
-
-  return url.toString();
-}
-
-function updateOBSUrl() {
-  const input = document.getElementById('obs-url-input');
-  if (!input) return;
-
-  input.value = buildStreamlabsOBSUrl();
-}
-
-function downloadStreamlabsConfig() {
-  const safeConfig = {
-    channel: state.streamer ? state.streamer.name : '',
-    commands: state.commands || [],
-    mediaLib: state.mediaLib || { sounds: [], overlays: [] }
-  };
-
-  const blob = new Blob([JSON.stringify(safeConfig, null, 2)], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
-
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = 'usako-streamlabs-config.json';
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-
-  URL.revokeObjectURL(url);
-}
-
-const exportBtn = document.getElementById('btn-export-streamlabs-config');
-if (exportBtn) exportBtn.addEventListener('click', downloadStreamlabsConfig);
-
 // ─── BOOT ─────────────────────────────────────────────────────────────────────
 document.addEventListener('click', e => {
   if (e.target.id === 'btn-copy-obs-url') {
@@ -1086,18 +961,14 @@ document.addEventListener('click', e => {
   }
 });
 
-document.addEventListener('DOMContentLoaded', async () => {
+document.addEventListener('DOMContentLoaded', () => {
   loadState();
-
-  const handledOAuth = await handleOAuthCallback();
+  handleOAuthCallback();
   checkPendingToken();
-
-  if (!handledOAuth) {
-    if (state.streamer) {
-      showApp();
-    } else {
-      showLogin();
-    }
+  if (state.streamer) {
+    showApp();
+  } else {
+    showLogin();
   }
 });
 </script>
