@@ -313,12 +313,13 @@
         </div>
         <div class="card">
           <div class="card-title" style="margin-bottom:16px">OBS Browser Source</div>
-          <p style="font-size:13px;color:var(--muted);margin-bottom:12px">Add this URL as a Browser Source in OBS. Set width/height to match your stream resolution. Background is transparent.</p>
-          <div style="display:flex;gap:10px;align-items:center">
-            <input type="text" value="https://usagi-tsukiii.github.io/obs.html" readonly id="obs-url-input" style="flex:1;font-family:var(--mono);font-size:12px">
-            <button class="btn btn-primary btn-sm" id="btn-copy-obs-url">Copy</button>
+          <p style="font-size:13px;color:var(--muted);margin-bottom:12px">Click Generate to create your personal OBS browser source URL. Paste it into Streamlabs/OBS as a Browser Source (1920x1080). It will auto-connect to your chat and play sounds and overlays.</p>
+          <div style="display:flex;gap:10px;align-items:center;margin-bottom:10px">
+            <input type="text" id="obs-url-input" readonly placeholder="Click Generate to create your URL" style="flex:1;font-family:var(--mono);font-size:11px">
+            <button class="btn btn-primary btn-sm" id="btn-gen-obs-url">Generate</button>
+            <button class="btn btn-ghost btn-sm" id="btn-copy-obs-url">Copy</button>
           </div>
-          <div style="font-size:11px;color:var(--muted);margin-top:8px">⚠️ Keep this bot page open in the same browser while streaming — the OBS source listens for signals from it.</div>
+          <div style="font-size:11px;color:var(--muted)">⚠️ Regenerate this URL any time you add new commands or media — the URL encodes your current setup.</div>
         </div>
         <div class="card">
           <div class="card-title" style="margin-bottom:16px">Danger Zone</div>
@@ -954,10 +955,32 @@ function escHtml(s) { return String(s || '').replace(/&/g,'&amp;').replace(/</g,
 document.addEventListener('click', e => {
   if (e.target.id === 'btn-copy-obs-url') {
     const input = document.getElementById('obs-url-input');
+    if (!input.value) return;
     navigator.clipboard.writeText(input.value).then(() => {
       e.target.textContent = 'Copied!';
       setTimeout(() => e.target.textContent = 'Copy', 2000);
     });
+  }
+  if (e.target.id === 'btn-gen-obs-url') {
+    if (!state.streamer) { alert('You must be logged in to generate an OBS URL.'); return; }
+    const token = (state.bot || state.streamer).token;
+    const channel = state.streamer.name;
+    if (!token) { alert('No OAuth token found. Please log in with a real account (not demo mode).'); return; }
+    // Compress commands + media into base64 to embed in URL
+    const payload = {
+      channel,
+      token,
+      commands: state.commands,
+      mediaLib: state.mediaLib
+    };
+    const json = JSON.stringify(payload);
+    const b64 = btoa(unescape(encodeURIComponent(json)));
+    const url = 'https://usagi-tsukiii.github.io/obs.html#' + b64;
+    document.getElementById('obs-url-input').value = url;
+    // Warn if URL is very long
+    if (url.length > 50000) {
+      alert('Warning: your URL is very long (' + Math.round(url.length/1024) + 'KB) due to uploaded media. Consider using smaller image/audio files for better compatibility with browser sources.');
+    }
   }
 });
 
