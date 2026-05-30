@@ -7,79 +7,40 @@
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body { background: transparent; width: 100vw; height: 100vh; overflow: hidden; position: relative; font-family: sans-serif; }
   .overlay-el { position: absolute; border-radius: 8px; max-width: 80vw; max-height: 80vh; pointer-events: none; }
-  #setup {
-    display: none; position: fixed; inset: 0;
-    background: #0d0f14; color: #eaeaf5; padding: 40px; z-index: 9999; overflow-y: auto;
+  #error {
+    display: none; position: fixed; inset: 0; background: #0d0f14;
+    color: #eaeaf5; padding: 40px; z-index: 9999; font-family: sans-serif;
   }
-  #setup h2 { font-size: 22px; margin-bottom: 8px; }
-  #setup p { color: #7c82a0; font-size: 13px; margin-bottom: 24px; line-height: 1.6; }
-  #setup label { display: block; font-size: 11px; font-weight: 700; color: #7c82a0; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px; }
-  #setup input { width: 100%; padding: 9px 12px; margin-bottom: 16px; background: #1c2030; border: 1px solid rgba(255,255,255,0.07); color: #eaeaf5; font-size: 13px; border-radius: 8px; }
-  #setup button { padding: 10px 24px; background: #6c5ce7; color: #fff; border: none; border-radius: 8px; font-size: 14px; font-weight: 700; cursor: pointer; margin-right: 10px; }
-  #setup button.secondary { background: #232840; }
-  #setup .note { background: rgba(108,92,231,0.1); border: 1px solid rgba(108,92,231,0.3); color: #a29bfe; padding: 12px 16px; border-radius: 8px; font-size: 12px; margin-bottom: 20px; line-height: 1.6; }
+  #error h2 { color: #e17055; margin-bottom: 12px; }
+  #error p { color: #7c82a0; font-size: 14px; line-height: 1.6; }
   #status { position: fixed; bottom: 10px; left: 10px; font-family: monospace; font-size: 11px; color: rgba(255,255,255,0.25); pointer-events: none; }
 </style>
 </head>
 <body>
-
-<div id="setup">
-  <h2>🐰 Usako OBS Setup</h2>
-  <div class="note">
-    Open this file in the <strong>same browser</strong> you use for the Usako bot page, and it will auto-detect your account. Then save this file to your computer and point Streamlabs to it as a <strong>Local File</strong>.
-  </div>
-  <p>If auto-detect didn't work, enter your details manually:</p>
-
-  <label>Twitch Channel Name</label>
-  <input id="inp-channel" type="text" placeholder="e.g. usagi_tsukiii">
-
-  <label>OAuth Token (open Usako bot page → F12 Console → type: <code style="background:#232840;padding:2px 5px;border-radius:3px">JSON.parse(localStorage.getItem('usako_v1')).streamer.token</code>)</label>
-  <input id="inp-token" type="text" placeholder="paste token here">
-
-  <button id="btn-save">Save & Connect</button>
-  <button class="secondary" id="btn-reset">Reset Saved Config</button>
+<div id="error">
+  <h2>⚠ Usako OBS — No URL Data</h2>
+  <p>This browser source URL is missing its configuration.<br><br>
+  Go to your <strong>Usako bot page → Settings → OBS Browser Source</strong> and click <strong>Generate</strong> to create a fresh URL, then paste it here.</p>
 </div>
-
 <div id="container"></div>
-<div id="status">Usako OBS — starting...</div>
+<div id="status">Usako OBS — loading...</div>
 
 <script>
-  const USAKO_KEY = 'usako_v1';
-  const OBS_KEY   = 'usako_obs_config';
-
-  // ── CONFIG ────────────────────────────────────────────────────────────────
-  function getConfig() {
-    // Try to read from the main Usako bot's localStorage key first
+  // ── LOAD CONFIG FROM URL HASH ─────────────────────────────────────────────
+  function loadConfig() {
     try {
-      const s = localStorage.getItem(USAKO_KEY);
-      if (s) {
-        const d = JSON.parse(s);
-        if (d && d.streamer && d.streamer.name) {
-          return {
-            channel: d.streamer.name,
-            token: (d.bot || d.streamer).token || null,
-            commands: d.commands || [],
-            mediaLib: d.mediaLib || { sounds: [], overlays: [] }
-          };
-        }
-      }
-    } catch(e) {}
-    // Fall back to manually saved OBS config
-    try {
-      const s = localStorage.getItem(OBS_KEY);
-      if (s) return JSON.parse(s);
-    } catch(e) {}
-    return null;
-  }
-
-  function getFreshCommands() {
-    const c = getConfig();
-    return c ? { commands: c.commands, mediaLib: c.mediaLib } : { commands: [], mediaLib: { sounds: [], overlays: [] } };
+      const hash = location.hash.substring(1);
+      if (!hash) return null;
+      const json = decodeURIComponent(escape(atob(hash)));
+      return JSON.parse(json);
+    } catch(e) {
+      setStatus('error decoding config: ' + e.message);
+      return null;
+    }
   }
 
   // ── MEDIA ─────────────────────────────────────────────────────────────────
-  function playSound(action) {
-    const { mediaLib } = getFreshCommands();
+  function playSound(action, mediaLib) {
     const file = (mediaLib.sounds || []).find(s => s.id === action.fileId);
     if (!file) { setStatus('⚠ sound not found'); return; }
     const audio = new Audio(file.b64);
@@ -87,8 +48,7 @@
     audio.play().then(() => setStatus('♪ playing sound')).catch(e => setStatus('sound blocked: ' + e.message));
   }
 
-  function showOverlay(action) {
-    const { mediaLib } = getFreshCommands();
+  function showOverlay(action, mediaLib) {
     const file = (mediaLib.overlays || []).find(o => o.id === action.fileId);
     if (!file) { setStatus('⚠ overlay not found'); return; }
     const container = document.getElementById('container');
@@ -118,10 +78,9 @@
     return (cmd.autoExclaim !== false ? raw.map(t => '!' + t) : raw).map(t => t.toLowerCase());
   }
 
-  function checkTrigger(text) {
-    const { commands } = getFreshCommands();
+  function checkTrigger(text, config) {
     const lower = text.trim().toLowerCase();
-    commands.forEach(cmd => {
+    (config.commands || []).forEach(cmd => {
       if (cmd.enabled === false) return;
       for (const trigger of buildTriggers(cmd)) {
         const matched = cmd.wildcards ? lower.startsWith(trigger) : lower.split(/\s+/)[0] === trigger;
@@ -130,8 +89,8 @@
           (cmd.actions || []).forEach(action => {
             if (action.type !== 'sound' && action.type !== 'overlay') return;
             setTimeout(() => {
-              if (action.type === 'sound') playSound(action);
-              if (action.type === 'overlay') showOverlay(action);
+              if (action.type === 'sound') playSound(action, config.mediaLib);
+              if (action.type === 'overlay') showOverlay(action, config.mediaLib);
             }, action.delay || 0);
           });
           break;
@@ -143,20 +102,20 @@
   // ── IRC ───────────────────────────────────────────────────────────────────
   let socket = null;
 
-  function startBot(channel, token) {
-    setStatus('connecting to #' + channel + '...');
+  function startBot(config) {
+    setStatus('connecting to #' + config.channel + '...');
     if (socket) { try { socket.close(); } catch(e) {} socket = null; }
     socket = new WebSocket('wss://irc-ws.chat.twitch.tv:443');
     socket.onopen = () => {
-      if (token) {
-        socket.send('PASS oauth:' + token);
-        socket.send('NICK ' + channel);
+      if (config.token) {
+        socket.send('PASS oauth:' + config.token);
+        socket.send('NICK ' + config.channel);
       } else {
         socket.send('PASS SCHMOOPIIE');
         socket.send('NICK justinfan' + Math.floor(Math.random() * 99999));
       }
       socket.send('CAP REQ :twitch.tv/tags twitch.tv/commands');
-      socket.send('JOIN #' + channel);
+      socket.send('JOIN #' + config.channel);
     };
     socket.onmessage = e => {
       e.data.split('\r\n').filter(Boolean).forEach(line => {
@@ -167,19 +126,16 @@
         if (parts[0].startsWith(':')) parts.shift();
         const cmd = parts.shift();
         const params = parts.join(' ');
-        if (cmd === '001' || cmd === '376') setStatus('✓ connected to #' + channel);
+        if (cmd === '001' || cmd === '376') setStatus('✓ connected to #' + config.channel);
         if (cmd === 'PRIVMSG') {
           const m = params.match(/^#\S+ :(.*)/);
-          if (m) checkTrigger(m[1]);
+          if (m) checkTrigger(m[1], config);
         }
       });
     };
     socket.onclose = () => {
       setStatus('disconnected — retrying in 10s...');
-      setTimeout(() => {
-        const cfg = getConfig();
-        if (cfg) startBot(cfg.channel, cfg.token);
-      }, 10000);
+      setTimeout(() => startBot(config), 10000);
     };
     socket.onerror = () => setStatus('connection error');
   }
@@ -196,31 +152,18 @@
   }
   unlockAudio();
   if (window.obsstudio) window.obsstudio.onActiveChange = a => { if (a) unlockAudio(); };
-
-  // ── SETUP UI ──────────────────────────────────────────────────────────────
-  document.getElementById('btn-save').addEventListener('click', () => {
-    const channel = document.getElementById('inp-channel').value.trim().toLowerCase();
-    const token = document.getElementById('inp-token').value.trim();
-    if (!channel) { alert('Channel name required.'); return; }
-    localStorage.setItem(OBS_KEY, JSON.stringify({ channel, token, commands: [], mediaLib: { sounds: [], overlays: [] } }));
-    document.getElementById('setup').style.display = 'none';
-    startBot(channel, token);
-  });
-  document.getElementById('btn-reset').addEventListener('click', () => {
-    localStorage.removeItem(OBS_KEY);
-    location.reload();
-  });
+  document.addEventListener('click', unlockAudio, { once: true });
 
   // ── STATUS ────────────────────────────────────────────────────────────────
   function setStatus(msg) { document.getElementById('status').textContent = 'Usako OBS — ' + msg; }
 
   // ── BOOT ─────────────────────────────────────────────────────────────────
-  const cfg = getConfig();
-  if (cfg && cfg.channel) {
-    startBot(cfg.channel, cfg.token);
+  const config = loadConfig();
+  if (!config || !config.channel) {
+    document.getElementById('error').style.display = 'block';
+    setStatus('no config in URL');
   } else {
-    document.getElementById('setup').style.display = 'block';
-    setStatus('waiting for setup...');
+    startBot(config);
   }
 </script>
 </body>
